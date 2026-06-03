@@ -118,6 +118,7 @@ app.get('/:apiKey/:token/manifest.json', (req, res) => {
     description: 'Affiche votre liste "À voir" BetaSeries et marque automatiquement les films/épisodes comme vus lors de la lecture.',
     resources: [
       'catalog',
+      'meta',
       'stream'
     ],
     types: ['movie', 'series'],
@@ -211,6 +212,79 @@ app.get('/:apiKey/:token/catalog/movie/betaseries-watchlist-movies.json', async 
   } catch (err) {
     console.error('[Catalog] Movie error:', err);
     res.json({ metas: [] });
+  }
+});
+
+// 4.5. GET /:apiKey/:token/meta/:type/:id.json: Meta enricher with BetaSeries watched status
+app.get('/:apiKey/:token/meta/:type/:id.json', async (req, res) => {
+  const { apiKey, token, type, id } = req.params;
+  console.log(`[Meta] Requesting metadata for type: ${type}, id: ${id}`);
+
+  try {
+    // Fetch official metadata from Cinemeta
+    const cinemetaUrl = `https://v3-cinemeta.strem.io/meta/${type}/${id}.json`;
+    const response = await fetch(cinemetaUrl);
+    const data = await response.json();
+
+    if (!data.meta) {
+      return res.json(data);
+    }
+
+    const meta = data.meta;
+    const authHeaders = {
+      'X-BetaSeries-Key': apiKey,
+      'Authorization': `Bearer ${token}`
+    };
+
+    if (type === 'series' && meta.videos && meta.videos.length > 0) {
+      // Find show on BetaSeries using the IMDB ID
+      const showData = await makeBetaSeriesRequest('/shows/display', 'GET', authHeaders, {
+        imdb_id: id
+      }).catch(() => null);
+
+      const show = showData?.show;
+      if (show && show.id) {
+        // Fetch episodes list with user watched status
+        const epsData = await makeBetaSeriesRequest('/shows/episodes', 'GET', authHeaders, {
+          id: show.id
+        }).catch(() => null);
+
+        const betaEpisodes = epsData?.episodes || [];
+
+        // Modify episode titles to show watched/unwatched status
+        meta.videos = meta.videos.map(video => {
+          const matchingEp = betaEpisodes.find(
+            e => e.season === video.season && e.episode === video.number
+          );
+
+          if (matchingEp) {
+            const isSeen = matchingEp.user?.seen;
+            const prefix = isSeen ? '🟢 ' : '🔴 ';
+            return {
+              ...video,
+              name: `${prefix}${video.name}`
+            };
+          }
+          return video;
+        });
+      }
+    } else if (type === 'movie') {
+      const movieData = await makeBetaSeriesRequest('/movies/movie', 'GET', authHeaders, {
+        imdb_id: id
+      }).catch(() => null);
+
+      const movie = movieData?.movie;
+      if (movie && movie.user) {
+        const isSeen = movie.user.state === 1;
+        const prefix = isSeen ? '🟢 ' : '🔴 ';
+        meta.name = `${prefix}${meta.name}`;
+      }
+    }
+
+    res.json({ meta });
+  } catch (err) {
+    console.error('[Meta] Enrich error:', err);
+    res.json({ meta: null });
   }
 });
 
