@@ -304,8 +304,12 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Start Express server
-app.listen(PORT, () => {
-  console.log(`[Server] Stremio-BetaSeries addon server running on port ${PORT}`);
-  console.log(`[Server] Access the configuration page at http://localhost:${PORT}`);
-});
+// Start Express server if not in serverless environment
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`[Server] Stremio-BetaSeries addon server running on port ${PORT}`);
+    console.log(`[Server] Access the configuration page at http://localhost:${PORT}`);
+  });
+}
+
+export default app;
