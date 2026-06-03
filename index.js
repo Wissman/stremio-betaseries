@@ -146,34 +146,39 @@ app.get('/:apiKey/:token/manifest.json', (req, res) => {
   res.json(manifest);
 });
 
-// 3. GET /:apiKey/:token/catalog/series/betaseries-planning.json: Catalog for series in progress
+// 3. GET /:apiKey/:token/catalog/series/betaseries-planning.json: Catalog for series in progress (maintaining BetaSeries chronological order)
 app.get('/:apiKey/:token/catalog/series/betaseries-planning.json', async (req, res) => {
   const { apiKey, token } = req.params;
 
   try {
-    const data = await makeBetaSeriesRequest('/shows/member', 'GET', {
+    const data = await makeBetaSeriesRequest('/episodes/list', 'GET', {
       'X-BetaSeries-Key': apiKey,
       'Authorization': `Bearer ${token}`
     }, {
-      status: 'current',
-      limit: 100
+      limit: 100,
+      released: 1 // Only show already released episodes
     });
 
-    const shows = data.shows || [];
-    const metas = shows.map(show => {
-      const s = show.show || show;
-      if (!s || !s.imdb_id || !s.imdb_id.startsWith('tt')) return null;
+    const episodes = data.episodes || [];
+    const showMap = new Map();
 
-      return {
-        id: s.imdb_id,
-        type: 'series',
-        name: s.title,
-        poster: s.images?.poster || s.images?.show || '',
-        description: s.description || `Série en cours de visionnage. Reste ${s.user?.remaining || 0} épisodes à voir.`
-      };
-    }).filter(Boolean);
+    for (const ep of episodes) {
+      const show = ep.show;
+      if (!show || !show.imdb_id || !show.imdb_id.startsWith('tt')) continue;
 
-    console.log(`[Catalog] Returned ${metas.length} series in progress for user`);
+      if (!showMap.has(show.id)) {
+        showMap.set(show.id, {
+          id: show.imdb_id,
+          type: 'series',
+          name: show.title,
+          poster: show.images?.poster || show.images?.show || '',
+          description: show.description || `Prochain épisode à voir : Saison ${ep.season} Épisode ${ep.episode} - "${ep.title}"`
+        });
+      }
+    }
+
+    const metas = Array.from(showMap.values());
+    console.log(`[Catalog] Returned ${metas.length} series in original planning order for user`);
     res.json({ metas });
   } catch (err) {
     console.error('[Catalog] Series error:', err);
