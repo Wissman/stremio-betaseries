@@ -151,33 +151,59 @@ app.get('/:apiKey/:token/catalog/series/betaseries-planning.json', async (req, r
   const { apiKey, token } = req.params;
 
   try {
-    const data = await makeBetaSeriesRequest('/episodes/list', 'GET', {
+    // 1. Get all active shows for this user to build an ID-to-IMDB mapping
+    const memberShowsData = await makeBetaSeriesRequest('/shows/member', 'GET', {
+      'X-BetaSeries-Key': apiKey,
+      'Authorization': `Bearer ${token}`
+    }, {
+      status: 'current',
+      limit: 100
+    });
+
+    const memberShows = memberShowsData.shows || [];
+    const imdbMap = new Map(); // Map BetaSeries show.id -> imdb_id
+    const posterMap = new Map(); // Map BetaSeries show.id -> poster_url
+    const descMap = new Map(); // Map BetaSeries show.id -> description
+
+    for (const show of memberShows) {
+      const s = show.show || show;
+      if (s && s.id) {
+        const idNum = Number(s.id);
+        if (s.imdb_id) imdbMap.set(idNum, s.imdb_id);
+        if (s.images?.poster || s.images?.show) posterMap.set(idNum, s.images.poster || s.images.show);
+        if (s.description) descMap.set(idNum, s.description);
+      }
+    }
+
+    // 2. Get the episodes watchlist to get the correct planning order
+    const planningData = await makeBetaSeriesRequest('/episodes/list', 'GET', {
       'X-BetaSeries-Key': apiKey,
       'Authorization': `Bearer ${token}`
     }, {
       limit: 100,
-      released: 1 // Only show already released episodes
+      released: 1
     });
 
-    const episodes = data.episodes || [];
-    const showMap = new Map();
+    const planningShows = planningData.shows || [];
+    const metas = [];
 
-    for (const ep of episodes) {
-      const show = ep.show;
-      if (!show || !show.imdb_id || !show.imdb_id.startsWith('tt')) continue;
+    for (const planningShow of planningShows) {
+      const showId = Number(planningShow.id);
+      const imdbId = imdbMap.get(showId);
+      if (!imdbId || !imdbId.startsWith('tt')) continue;
 
-      if (!showMap.has(show.id)) {
-        showMap.set(show.id, {
-          id: show.imdb_id,
-          type: 'series',
-          name: show.title,
-          poster: show.images?.poster || show.images?.show || '',
-          description: show.description || `Prochain épisode à voir : Saison ${ep.season} Épisode ${ep.episode} - "${ep.title}"`
-        });
-      }
+      const nextEp = planningShow.unseen?.[0];
+      const nextEpText = nextEp ? `Prochain épisode : Saison ${nextEp.season} Épisode ${nextEp.episode} - "${nextEp.title}"` : '';
+
+      metas.push({
+        id: imdbId,
+        type: 'series',
+        name: planningShow.title || '',
+        poster: planningShow.poster || posterMap.get(showId) || '',
+        description: descMap.get(showId) || nextEpText || 'Série en cours de visionnage.'
+      });
     }
 
-    const metas = Array.from(showMap.values());
     console.log(`[Catalog] Returned ${metas.length} series in original planning order for user`);
     res.json({ metas });
   } catch (err) {
