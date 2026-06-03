@@ -1,0 +1,13 @@
+{
+  "name": "stremio-betaseries",
+  "version": "1.0.0",
+  "description": "Stremio addon to track and sync with BetaSeries",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
