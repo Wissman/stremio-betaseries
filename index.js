@@ -94,13 +94,13 @@ app.post('/api/login', async (req, res) => {
       return res.status(response.status || 400).json({ error: errMsg });
     }
 
-    const token = data.user?.token;
+    const token = data.token;
     if (!token) {
       return res.status(500).json({ error: 'Token non reçu de BetaSeries.' });
     }
 
     console.log(`[Auth] Login successful for user: ${username}`);
-    return res.json({ token, login: data.user.login });
+    return res.json({ token, login: data.user?.login || username });
   } catch (err) {
     console.error('[Auth] Internal error:', err);
     return res.status(500).json({ error: 'Erreur interne lors de l\'authentification.' });
