@@ -145,39 +145,34 @@ app.get('/:apiKey/:token/manifest.json', (req, res) => {
   res.json(manifest);
 });
 
-// 3. GET /:apiKey/:token/catalog/series/betaseries-planning.json: Catalog for series to watch
+// 3. GET /:apiKey/:token/catalog/series/betaseries-planning.json: Catalog for series in progress
 app.get('/:apiKey/:token/catalog/series/betaseries-planning.json', async (req, res) => {
   const { apiKey, token } = req.params;
 
   try {
-    const data = await makeBetaSeriesRequest('/episodes/list', 'GET', {
+    const data = await makeBetaSeriesRequest('/shows/member', 'GET', {
       'X-BetaSeries-Key': apiKey,
       'Authorization': `Bearer ${token}`
     }, {
-      limit: 100,
-      released: 1 // Only show already released episodes
+      status: 'current',
+      limit: 100
     });
 
-    const episodes = data.episodes || [];
-    const showMap = new Map();
+    const shows = data.shows || [];
+    const metas = shows.map(show => {
+      const s = show.show || show;
+      if (!s || !s.imdb_id || !s.imdb_id.startsWith('tt')) return null;
 
-    for (const ep of episodes) {
-      const show = ep.show;
-      if (!show || !show.imdb_id || !show.imdb_id.startsWith('tt')) continue;
+      return {
+        id: s.imdb_id,
+        type: 'series',
+        name: s.title,
+        poster: s.images?.poster || s.images?.show || '',
+        description: s.description || `Série en cours de visionnage. Reste ${s.user?.remaining || 0} épisodes à voir.`
+      };
+    }).filter(Boolean);
 
-      if (!showMap.has(show.id)) {
-        showMap.set(show.id, {
-          id: show.imdb_id,
-          type: 'series',
-          name: show.title,
-          poster: show.images?.poster || show.images?.show || '',
-          description: show.description || `Prochain épisode à voir : Saison ${ep.season} Épisode ${ep.episode} - "${ep.title}"`
-        });
-      }
-    }
-
-    const metas = Array.from(showMap.values());
-    console.log(`[Catalog] Returned ${metas.length} series in watchlist for user`);
+    console.log(`[Catalog] Returned ${metas.length} series in progress for user`);
     res.json({ metas });
   } catch (err) {
     console.error('[Catalog] Series error:', err);
